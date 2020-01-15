@@ -1,8 +1,12 @@
+= R serialization: code-reading
+
 * last updated:{docdatetime}
 
 * This memo is based on R version 3.6.2 (2019-12-22 released)
+
 == Summary
-=== linkage between R functions and backend c code 
+
+=== linkage between R functions and backend c code
 * As the R internals manual writes (2 .Internal vs .Primitive : https://cran.r-project.org/doc/manuals/r-release/R-ints.html#g_t_002eInternal-vs-_002ePrimitive), the mapping table between an R function and its corresponding C function is stored in `names.c (./src/main/names.c)`; note the following naming exceptions that do not follow the default naming scheme "do_" + R-function-name; the following three different R functions are handled by one C function.
 
 ----
@@ -26,7 +30,7 @@
 |R function pair             |purposes
 |save() / load()             |save/load a set of R objects
 |saveRDS() / loadRDS()       |save/load a single R object
-|serialize() / unserialize() |save/load 
+|serialize() / unserialize() |save/load
 |===
 
 * The following table shows R functions(entry-point) and c files
@@ -49,19 +53,19 @@ R-3.6.2/src/library/base/R
 ** c file location
 R-3.6.2/src/main
 
-=== Miscellaneous 
-* There are three key options for each R entry-point functions: 
+=== Miscellaneous
+* There are three key options for each R entry-point functions:
 ** versions: 1, 2, 3
 ** ASCII vs binary(non-ASCII)
 ** compress vs non-compress
 
 * for writing an RData or RDS file, the core serialization logic is coded in the following c functions:
-** R_Serialize() 
+** R_Serialize()
 ** R_serializeb()
 ** steps of serialization by a function call
-. OutFormat: magic code 
+. OutFormat: magic code
 . OutInteger: version number
-. WriteItem 
+. WriteItem
 
 
 https://www.hackerearth.com/practice/data-structures/linked-list/singly-linked-list/tutorial/
@@ -103,7 +107,7 @@ void R_Serialize(SEXP s, R_outpstream_t stream) {
 }
 
 * Do not confuse with R_serialize in serialize()
-* stream->type => (*stream).type 
+* stream->type => (*stream).type
 ----
 [start=2]
 . R_outpstream_st in Rinternal.h
