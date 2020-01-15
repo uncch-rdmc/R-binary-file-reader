@@ -1,0 +1,432 @@
+* last updated:{docdatetime}
+
+* This memo is based on R version 3.6.2 (2019-12-22 released)
+== Summary
+=== linkage between R functions and backend c code 
+* As the R internals manual writes (2 .Internal vs .Primitive : https://cran.r-project.org/doc/manuals/r-release/R-ints.html#g_t_002eInternal-vs-_002ePrimitive), the mapping table between an R function and its corresponding C function is stored in `names.c (./src/main/names.c)`; note the following naming exceptions that do not follow the default naming scheme "do_" + R-function-name; the following three different R functions are handled by one C function.
+
+----
+{"serialize",	do_serialize,	0,	11,	5,	{PP_FUNCALL, PREC_FN,	0}},
+{"serializeb",	do_serialize,	1,	11,	5,	{PP_FUNCALL, PREC_FN,	0}},
+{"unserialize",	do_serialize,	2,	11,	2,	{PP_FUNCALL, PREC_FN,	0}},
+
+{"save",	do_save,	0,	111,	6,	{PP_FUNCALL, PREC_FN,	0}},
+{"saveToConn",	do_saveToConn,	0,	111,	6,	{PP_FUNCALL, PREC_FN,	0}},
+{"load",	do_load,	0,	111,	2,	{PP_FUNCALL, PREC_FN,	0}},
+{"loadFromConn2",    do_loadFromConn2,0, 111,	3,	{PP_FUNCALL, PREC_FN,	0}},
+{"loadInfoFromConn2",do_loadFromConn2,1, 11,	1,	{PP_FUNCALL, PREC_FN,	0}},
+{"serializeToConn",	 do_serializeToConn,	0, 111,	5,	{PP_FUNCALL, PREC_FN,	0}},
+{"unserializeFromConn",	 do_unserializeFromConn, 0, 11,	2,	{PP_FUNCALL, PREC_FN,	0}},
+{"serializeInfoFromConn",do_unserializeFromConn, 1, 11,	1,	{PP_FUNCALL, PREC_FN,	0}},
+----
+
+
+* There are at least three pairs of serialization/deserialization-related R functions:
+|===
+|R function pair             |purposes
+|save() / load()             |save/load a set of R objects
+|saveRDS() / loadRDS()       |save/load a single R object
+|serialize() / unserialize() |save/load 
+|===
+
+* The following table shows R functions(entry-point) and c files
+
+|===
+|R functions   |stored R file   |R-side function           |c-entry-point               |stored c file   |key c function
+|save()         |load.R         |saveToConn()              |do_saveToConn()             |saveload.c      |R_Serialize() in serialize.c
+|load()         |load.R         |loadFromConn2()           |do_loadFromConn2()          |saveload.c      |R_Unserialize(), R_SerializeInfo() in serialize.c
+|saveRDS()      |serialize.R    |serializeToConn()         |do_serializeToConn()        |serialize.c     |R_serialize()
+|loadRDS()      |serialize.R    |unserializeFromConn()     |do_unserializeFromConn()    |serialize.c     |R_Unserialize(), R_SerializeInfo()
+|serialize()    |serialize.R    |serializeb()/serialize()  |do_serialize()              |serialize.c     |R_serializeb(), R_serialize()
+|unserialize()  |serialize.R     |unserialize()               |do_serialize()              |serialize.c     |ditto
+|===
+note: R_Serialize() vs R_serialize() in serialize.c, esp. concerning the number of arguments; R_Serialize() is stored in serialize.c, not saveload.c.
+
+* source file location
+
+** R file location
+R-3.6.2/src/library/base/R
+** c file location
+R-3.6.2/src/main
+
+=== Miscellaneous 
+* There are three key options for each R entry-point functions: 
+** versions: 1, 2, 3
+** ASCII vs binary(non-ASCII)
+** compress vs non-compress
+
+* for writing an RData or RDS file, the core serialization logic is coded in the following c functions:
+** R_Serialize() 
+** R_serializeb()
+** steps of serialization by a function call
+. OutFormat: magic code 
+. OutInteger: version number
+. WriteItem 
+
+
+https://www.hackerearth.com/practice/data-structures/linked-list/singly-linked-list/tutorial/
+
+== source-code listing: relevant C functions
+
+. R_Serialize(2 arguments) in serialize()
+[source, C]
+----
+void R_Serialize(SEXP s, R_outpstream_t stream) {
+  SEXP ref_table;
+  int version = stream->version;
+
+  OutFormat(stream);
+
+  switch (version) {
+    case 2:
+      OutInteger(stream, version);
+      OutInteger(stream, R_VERSION);
+      OutInteger(stream, R_Version(2, 3, 0));
+      break;
+    case 3: {
+      OutInteger(stream, version);
+      OutInteger(stream, R_VERSION);
+      OutInteger(stream, R_Version(3, 5, 0));
+      const char *natenc = R_nativeEncoding();
+      int nelen = (int)strlen(natenc);
+      OutInteger(stream, nelen);
+      OutString(stream, natenc, nelen);
+      break;
+    }
+    default:
+      error(_("version %d not supported"), version);
+  }
+
+  PROTECT(ref_table = MakeHashTable());
+  WriteItem(s, ref_table, stream);
+  UNPROTECT(1);
+}
+
+* Do not confuse with R_serialize in serialize()
+* stream->type => (*stream).type 
+----
+[start=2]
+. R_outpstream_st in Rinternal.h
+[source, C]
+----
+typedef struct R_outpstream_st *R_outpstream_t;
+struct R_outpstream_st {
+    R_pstream_data_t data;
+    R_pstream_format_t type;
+    int version;
+    void (*OutChar)(R_outpstream_t, int);
+    void (*OutBytes)(R_outpstream_t, void *, int);
+    SEXP (*OutPersistHookFunc)(SEXP, SEXP);
+    SEXP OutPersistHookData;
+};
+
+----
+
+[start=3]
+. OutFormat() in serialize.c
+[source, C]
+----
+/*
+ * Format Header Reading and Writing
+ *
+ * The header starts with one of three characters, A for ascii, B for
+ * binary, or X for xdr.
+ */
+
+static void OutFormat(R_outpstream_t stream) {
+  /*    if (stream->type == R_pstream_binary_format) {
+          warning(_("binary format is deprecated; using xdr instead"));
+          stream->type = R_pstream_xdr_format;
+          } */
+  switch (stream->type) {
+    case R_pstream_ascii_format:
+    case R_pstream_asciihex_format:
+      stream->OutBytes(stream, "A\n", 2);
+      break;
+      /* on deserialization, asciihex_format is treated exactly the same
+         way as ascii_format; the distinction is handled inside scanf %lg */
+    case R_pstream_binary_format:
+      stream->OutBytes(stream, "B\n", 2);
+      break;
+    case R_pstream_xdr_format:
+      stream->OutBytes(stream, "X\n", 2);
+      break;
+    case R_pstream_any_format:
+      error(_("must specify ascii, binary, or xdr format"));
+    default:
+      error(_("unknown output format"));
+  }
+}
+
+
+----
+
+[start=4]
+. WriteItem() in serialize.c
+[source, c]
+----
+static void WriteItem(SEXP s, SEXP ref_table, R_outpstream_t stream) {
+  int i;
+  SEXP t;
+
+  if (R_compile_pkgs && TYPEOF(s) == CLOSXP && TYPEOF(BODY(s)) != BCODESXP &&
+      !R_disable_bytecode &&
+      (!IS_S4_OBJECT(s) || (!inherits(s, "refMethodDef") &&
+                            !inherits(s, "defaultBindingFunction")))) {
+    /* Do not compile reference class methods in their generators, because
+       the byte-code is dropped as soon as the method is installed into a
+       new environment. This is a performance optimization but it also
+       prevents byte-compiler warnings about no visible binding for super
+       assignment to a class field.
+
+       Do not compile default binding functions, because the byte-code is
+       dropped as fields are set in constructors (just an optimization).
+    */
+
+    SEXP new_s;
+    R_compile_pkgs = FALSE;
+    PROTECT(new_s = R_cmpfun1(s));
+    WriteItem(new_s, ref_table, stream);
+    UNPROTECT(1);
+    R_compile_pkgs = TRUE;
+    return;
+  }
+
+tailcall:
+  R_CheckStack();
+  if (ALTREP(s) && stream->version >= 3) {
+    SEXP info = ALTREP_SERIALIZED_CLASS(s);
+    SEXP state = ALTREP_SERIALIZED_STATE(s);
+    if (info != NULL && state != NULL) {
+      int flags = PackFlags(ALTREP_SXP, LEVELS(s), OBJECT(s), 0, 0);
+      PROTECT(state);
+      PROTECT(info);
+      OutInteger(stream, flags);
+      WriteItem(info, ref_table, stream);
+      WriteItem(state, ref_table, stream);
+      WriteItem(ATTRIB(s), ref_table, stream);
+      UNPROTECT(2); /* state, info */
+      return;
+    }
+    /* else fall through to standard processing */
+  }
+  if ((t = GetPersistentName(stream, s)) != R_NilValue) {
+    R_assert(TYPEOF(t) == STRSXP && LENGTH(t) > 0);
+    PROTECT(t);
+    HashAdd(s, ref_table);
+    OutInteger(stream, PERSISTSXP);
+    OutStringVec(stream, t, ref_table);
+    UNPROTECT(1);
+  } else if ((i = SaveSpecialHook(s)) != 0)
+    OutInteger(stream, i);
+  else if ((i = HashGet(s, ref_table)) != 0)
+    OutRefIndex(stream, i);
+  else if (TYPEOF(s) == SYMSXP) {
+    /* Note : NILSXP can't occur here */
+    HashAdd(s, ref_table);
+    OutInteger(stream, SYMSXP);
+    WriteItem(PRINTNAME(s), ref_table, stream);
+  } else if (TYPEOF(s) == ENVSXP) {
+    HashAdd(s, ref_table);
+    if (R_IsPackageEnv(s)) {
+      SEXP name = R_PackageEnvName(s);
+      warning(_("'%s' may not be available when loading"),
+              CHAR(STRING_ELT(name, 0)));
+      OutInteger(stream, PACKAGESXP);
+      OutStringVec(stream, name, ref_table);
+    } else if (R_IsNamespaceEnv(s)) {
+#ifdef WARN_ABOUT_NAME_SPACES_MAYBE_NOT_AVAILABLE
+      warning(_("namespaces may not be available when loading"));
+#endif
+      OutInteger(stream, NAMESPACESXP);
+      OutStringVec(stream, PROTECT(R_NamespaceEnvSpec(s)), ref_table);
+      UNPROTECT(1);
+    } else {
+      OutInteger(stream, ENVSXP);
+      OutInteger(stream, R_EnvironmentIsLocked(s) ? 1 : 0);
+      WriteItem(ENCLOS(s), ref_table, stream);
+      WriteItem(FRAME(s), ref_table, stream);
+      WriteItem(HASHTAB(s), ref_table, stream);
+      WriteItem(ATTRIB(s), ref_table, stream);
+    }
+  } else {
+    int flags, hastag, hasattr;
+    R_xlen_t len;
+    switch (TYPEOF(s)) {
+      case LISTSXP:
+      case LANGSXP:
+      case CLOSXP:
+      case PROMSXP:
+      case DOTSXP:
+        hastag = TAG(s) != R_NilValue;
+        break;
+      default:
+        hastag = FALSE;
+    }
+    /* With the CHARSXP cache chains maintained through the ATTRIB
+       field the content of that field must not be serialized, so
+       we treat it as not there. */
+    hasattr = (TYPEOF(s) != CHARSXP && ATTRIB(s) != R_NilValue);
+    flags = PackFlags(TYPEOF(s), LEVELS(s), OBJECT(s), hasattr, hastag);
+    OutInteger(stream, flags);
+    switch (TYPEOF(s)) {
+      case LISTSXP:
+      case LANGSXP:
+      case CLOSXP:
+      case PROMSXP:
+      case DOTSXP:
+        /* Dotted pair objects */
+        /* These write their ATTRIB fields first to allow us to avoid
+           recursion on the CDR */
+        if (hasattr) WriteItem(ATTRIB(s), ref_table, stream);
+        if (TAG(s) != R_NilValue) WriteItem(TAG(s), ref_table, stream);
+        WriteItem(CAR(s), ref_table, stream);
+        /* now do a tail call to WriteItem to handle the CDR */
+        s = CDR(s);
+        goto tailcall;
+      case EXTPTRSXP:
+        /* external pointers */
+        HashAdd(s, ref_table);
+        WriteItem(EXTPTR_PROT(s), ref_table, stream);
+        WriteItem(EXTPTR_TAG(s), ref_table, stream);
+        break;
+      case WEAKREFSXP:
+        /* Weak references */
+        HashAdd(s, ref_table);
+        break;
+      case SPECIALSXP:
+      case BUILTINSXP:
+        /* Builtin functions */
+        OutInteger(stream, (int)strlen(PRIMNAME(s)));
+        OutString(stream, PRIMNAME(s), (int)strlen(PRIMNAME(s)));
+        break;
+      case CHARSXP:
+        if (s == NA_STRING)
+          OutInteger(stream, -1);
+        else {
+          OutInteger(stream, LENGTH(s));
+          OutString(stream, CHAR(s), LENGTH(s));
+        }
+        break;
+      case LGLSXP:
+      case INTSXP:
+        len = XLENGTH(s);
+        WriteLENGTH(stream, s);
+        OutIntegerVec(stream, s, len);
+        break;
+      case REALSXP:
+        len = XLENGTH(s);
+        WriteLENGTH(stream, s);
+        OutRealVec(stream, s, len);
+        break;
+      case CPLXSXP:
+        len = XLENGTH(s);
+        WriteLENGTH(stream, s);
+        OutComplexVec(stream, s, len);
+        break;
+      case STRSXP:
+        len = XLENGTH(s);
+        WriteLENGTH(stream, s);
+        for (R_xlen_t ix = 0; ix < len; ix++)
+          WriteItem(STRING_ELT(s, ix), ref_table, stream);
+        break;
+      case VECSXP:
+      case EXPRSXP:
+        len = XLENGTH(s);
+        WriteLENGTH(stream, s);
+        for (R_xlen_t ix = 0; ix < len; ix++)
+          WriteItem(VECTOR_ELT(s, ix), ref_table, stream);
+        break;
+      case BCODESXP:
+        WriteBC(s, ref_table, stream);
+        break;
+      case RAWSXP:
+        len = XLENGTH(s);
+        WriteLENGTH(stream, s);
+        switch (stream->type) {
+          case R_pstream_xdr_format:
+          case R_pstream_binary_format: {
+            R_xlen_t done, this;
+            for (done = 0; done < len; done += this) {
+              this = min2(CHUNK_SIZE, len - done);
+              stream->OutBytes(stream, RAW(s) + done, (int)this);
+            }
+            break;
+          }
+          default:
+            for (R_xlen_t ix = 0; ix < len; ix++) OutByte(stream, RAW(s)[ix]);
+        }
+        break;
+      case S4SXP:
+        break; /* only attributes (i.e., slots) count */
+      default:
+        error(_("WriteItem: unknown type %i"), TYPEOF(s));
+    }
+    if (hasattr) WriteItem(ATTRIB(s), ref_table, stream);
+  }
+}
+----
+
+----
+static SEXP R_serialize(SEXP object, SEXP icon, SEXP ascii, SEXP Sversion,
+                        SEXP fun) {
+  struct R_outpstream_st out;
+  R_pstream_format_t type;
+  SEXP (*hook)(SEXP, SEXP);
+  int version;
+
+  if (Sversion == R_NilValue)
+    version = defaultSerializeVersion();
+  else
+    version = asInteger(Sversion);
+  if (version == NA_INTEGER || version <= 0) error(_("bad version value"));
+
+  hook = fun != R_NilValue ? CallHook : NULL;
+
+  // Prior to 3.2.0 this was logical, values 0/1/NA for binary.
+  int asc = asInteger(ascii);
+  switch (asc) {
+    case 1:
+      type = R_pstream_ascii_format;
+      break;
+    case 2:
+      type = R_pstream_asciihex_format;
+      break;
+    case 3:
+      type = R_pstream_binary_format;
+      break;
+    default:
+      type = R_pstream_xdr_format;
+      break;
+  }
+
+  if (icon == R_NilValue) {
+    RCNTXT cntxt;
+    struct membuf_st mbs;
+    SEXP val;
+
+    /* set up a context which will free the buffer if there is an error */
+    begincontext(&cntxt, CTXT_CCODE, R_NilValue, R_BaseEnv, R_BaseEnv,
+                 R_NilValue, R_NilValue);
+    cntxt.cend = &free_mem_buffer;
+    cntxt.cenddata = &mbs;
+
+    InitMemOutPStream(&out, &mbs, type, version, hook, fun);
+    R_Serialize(object, &out);
+
+    PROTECT(val = CloseMemOutPStream(&out));
+
+    /* end the context after anything that could raise an error but before
+       calling OutTerm so it doesn't get called twice */
+    endcontext(&cntxt);
+
+    UNPROTECT(1); /* val */
+    return val;
+  } else {
+    Rconnection con = getConnection(asInteger(icon));
+    R_InitConnOutPStream(&out, con, type, version, hook, fun);
+    R_Serialize(object, &out);
+    return R_NilValue;
+  }
+}
+----
