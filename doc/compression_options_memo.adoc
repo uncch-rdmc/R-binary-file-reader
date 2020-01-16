@@ -1,0 +1,111 @@
+= Compression options: a summary
+
+== gzip
+=== specification
+
+* RFC 6713
+The 'application/zlib' and 'application/gzip' Media Types, AUGUST 2012
+https://www.rfc-editor.org/info/rfc6713
+* https://en.wikipedia.org/wiki/Gzip
+----
+a 10-byte header, containing a magic number (1f 8b), the compression ID (08 for DEFLATE), 1-byte of header flags, a 4-byte timestamp, compression flags and the operating system ID.
+----
+=== java library
+* Java Standard Edition has its gzip IO classes 
+== bzip2
+
+=== specification
+general information::
+http://www.sourceware.org/bzip2/
+https://en.wikipedia.org/wiki/Bzip2
+http://www.sourceware.org/bzip2/docs.html
+http://www.sourceware.org/bzip2/manual/manual.html
+source repository::
+https://sourceware.org/git/bzip2.git
+unofficial specification::
+https://github.com/dsnet/compress/blob/master/doc/bzip2-format.pdf
+----
+magic:16                = 'BZ' signature/magic number
+version:8               = 'h' for Bzip2, '0' for Bzip1 (deprecated)
+hundred_k_blocksize:8   = '1'..'9' block-size 100 kB-900 kB (uncompressed)
+compressed_magic:48    = 0x314159265359 (BCD (pi))
+----
+
+
+
+=== java library
+https://commons.apache.org/proper/commons-compress/
+* Apache Commons Compress
+"... defines an API for working with ar, cpio, Unix dump, tar, zip, gzip, XZ, Pack200, bzip2, 7z, arj, lzma, snappy, DEFLATE, lz4, Brotli, Zstandard, DEFLATE64 and Z files."
+
+<dependency>
+    <groupId>org.apache.commons</groupId>
+    <artifactId>commons-compress</artifactId>
+    <version>1.19</version>
+</dependency>
+
+
+== xz file format
+=== specification
+https://tukaani.org/xz/format.html
+xz.util (https://tukaani.org/xz/)
+
+----
+
+.xz file format 1.0.4: excerpt from https://tukaani.org/xz/xz-file-format.txt
+2. Overall Structure of .xz File
+
+        A standalone .xz files consist of one or more Streams which may
+        have Stream Padding between or after them:
+
+            +========+================+========+================+
+            | Stream | Stream Padding | Stream | Stream Padding | ...
+            +========+================+========+================+
+
+        The sizes of Stream and Stream Padding are always multiples
+        of four bytes, thus the size of every valid .xz file MUST be
+        a multiple of four bytes.
+
+        While a typical file contains only one Stream and no Stream
+        Padding, a decoder handling standalone .xz files SHOULD support
+        files that have more than one Stream or Stream Padding.
+
+        In contrast to standalone .xz files, when the .xz file format
+        is used as an internal part of some other file format or
+        communication protocol, it usually is expected that the decoder
+        stops after the first Stream, and doesn't look for Stream
+        Padding or possibly other Streams.
+        2.1.1. Stream Header
+
+                +---+---+---+---+---+---+-------+------+--+--+--+--+
+                |  Header Magic Bytes   | Stream Flags |   CRC32   |
+                +---+---+---+---+---+---+-------+------+--+--+--+--+
+
+
+        2.1.1.1. Header Magic Bytes
+
+                The first six (6) bytes of the Stream are so called Header
+                Magic Bytes. They can be used to identify the file type.
+
+                    Using a C array and ASCII:
+                    const uint8_t HEADER_MAGIC[6]
+                            = { 0xFD, '7', 'z', 'X', 'Z', 0x00 };
+
+                    In plain hexadecimal:
+                    FD 37 7A 58 5A 00
+
+                Notes:
+                  - The first byte (0xFD) was chosen so that the files cannot
+                    be erroneously detected as being in .lzma format, in which
+                    the first byte is in the range [0x00, 0xE0].
+                  - The sixth byte (0x00) was chosen to prevent applications
+                    from misdetecting the file as a text file.
+
+                If the Header Magic Bytes don't match, the decoder MUST
+                indicate an error.
+----
+=== Java Library
+* The project that develops XZ Utils provide a Java library: to clone a repository:
+----
+git clone https://git.tukaani.org/project-name.git
+----

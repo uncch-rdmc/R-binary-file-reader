@@ -58,6 +58,7 @@ R-3.6.2/src/main
 ** versions: 1, 2, 3
 ** ASCII vs binary(non-ASCII)
 ** compress vs non-compress
+** recognized compression methods: gzip, bzip2, xz
 
 * for writing an RData or RDS file, the core serialization logic is coded in the following c functions:
 ** R_Serialize()
@@ -72,7 +73,7 @@ https://www.hackerearth.com/practice/data-structures/linked-list/singly-linked-l
 
 == source-code listing: relevant C functions
 
-. R_Serialize(2 arguments) in serialize()
+. R_Serialize(2 arguments) in serialize.c
 [source, C]
 ----
 void R_Serialize(SEXP s, R_outpstream_t stream) {
@@ -106,7 +107,7 @@ void R_Serialize(SEXP s, R_outpstream_t stream) {
   UNPROTECT(1);
 }
 
-* Do not confuse with R_serialize in serialize()
+* Do not confuse with R_serialize in serialize.c
 * stream->type => (*stream).type
 ----
 [start=2]
