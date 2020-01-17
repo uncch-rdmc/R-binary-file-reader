@@ -1,28 +1,66 @@
-= Compression options: a summary
+= RData/RDS Compression options: a summary
+
+* last updated:{docdatetime}
+
+== Introduction
+R offers three compression options when it serializes an R object in its binary format: gzip (default), bzip2, and xz.  The following sections summarize format-related information for coding file-identification methods.
 
 == gzip
-=== specification
+=== Specification
 
-* RFC 6713
-The 'application/zlib' and 'application/gzip' Media Types, AUGUST 2012
+* RFC 6713: The `application/zlib' and \'application/gzip' Media Types, AUGUST 2012
++
 https://www.rfc-editor.org/info/rfc6713
 * https://en.wikipedia.org/wiki/Gzip
 ----
-a 10-byte header, containing a magic number (1f 8b), the compression ID (08 for DEFLATE), 1-byte of header flags, a 4-byte timestamp, compression flags and the operating system ID.
+a 10-byte header, containing
+a magic number (1f 8b),
+the compression ID (08 for DEFLATE),
+1-byte of header flags,
+a 4-byte timestamp,
+compression flags and
+the operating system ID.
 ----
-=== java library
-* Java Standard Edition has its gzip IO classes 
+----
+* header diagram from rfc6713
++---+---+---+---+---+---+---+---+---+---+
+|ID1|ID2|CM |FLG|     MTIME     |XFL|OS |
++---+---+---+---+---+---+---+---+---+---+
+----
+* First 10-byte sequence
+----
+0 1F  magic #1
+1 8B  magic #2
+2 08  R-windows prints 8
+3 00  8-bit-flag
+4 00 ---
+5 00  4-byte-block time-stamp (0 'means no time stamp is available')
+6 00  R-windows does not save time-stamp data
+7 00 ---
+
+8 00  1-byte extra flag: R-windows sets this byte to 0
+9 06  R-windows prints 06-> HPFS filesystem (OS/2, NT)
+----
+=== Format-identification logic
+. read the first 10-bytes from a file
+. match the first two bytes to "1F8B"
+. optional-step: check whether the third byte is "08"
+
+
+=== Java library
+* Java Standard Edition(JSE) has its gzip IO classes
+
 == bzip2
 
-=== specification
-general information::
+=== Specification
+General information::
 http://www.sourceware.org/bzip2/
 https://en.wikipedia.org/wiki/Bzip2
 http://www.sourceware.org/bzip2/docs.html
 http://www.sourceware.org/bzip2/manual/manual.html
-source repository::
+Source repository::
 https://sourceware.org/git/bzip2.git
-unofficial specification::
+Unofficial specification::
 https://github.com/dsnet/compress/blob/master/doc/bzip2-format.pdf
 ----
 magic:16                = 'BZ' signature/magic number
@@ -30,29 +68,48 @@ version:8               = 'h' for Bzip2, '0' for Bzip1 (deprecated)
 hundred_k_blocksize:8   = '1'..'9' block-size 100 kB-900 kB (uncompressed)
 compressed_magic:48    = 0x314159265359 (BCD (pi))
 ----
+* First 10-byte sequence
+----
+0 42  magic #1: 'B'
+1 5A  magic #2: 'Z'
+2 68  68: bzip2, 00: bzip1: R-windows prints 68(h)
+3 39  block size: R-windows prints '39'
+4 31  --
+5 41
+6 59  6-byte
+7 26  block magic number: 0x314159265359 <-this integer comes from pi= 3.14...
+
+8 53
+9 59  --
+----
+=== Format-identification logic
+1. read the first 10 bytes
+2. match the first 3 bytes to "42 5A 68"
+3. optional step: check the last 6 bytes of the above 10 byte segment against the block magic number sequence depending on the
 
 
-
-=== java library
+=== Java library
 https://commons.apache.org/proper/commons-compress/
+
 * Apache Commons Compress
 "... defines an API for working with ar, cpio, Unix dump, tar, zip, gzip, XZ, Pack200, bzip2, 7z, arj, lzma, snappy, DEFLATE, lz4, Brotli, Zstandard, DEFLATE64 and Z files."
-
+* maven coordinates
+----
 <dependency>
     <groupId>org.apache.commons</groupId>
     <artifactId>commons-compress</artifactId>
     <version>1.19</version>
 </dependency>
+----
 
-
-== xz file format
-=== specification
+== xz
+=== Specification
+General information::
 https://tukaani.org/xz/format.html
 xz.util (https://tukaani.org/xz/)
 
-----
-
 .xz file format 1.0.4: excerpt from https://tukaani.org/xz/xz-file-format.txt
+----
 2. Overall Structure of .xz File
 
         A standalone .xz files consist of one or more Streams which may
@@ -75,6 +132,7 @@ xz.util (https://tukaani.org/xz/)
         communication protocol, it usually is expected that the decoder
         stops after the first Stream, and doesn't look for Stream
         Padding or possibly other Streams.
+
         2.1.1. Stream Header
 
                 +---+---+---+---+---+---+-------+------+--+--+--+--+
@@ -104,8 +162,24 @@ xz.util (https://tukaani.org/xz/)
                 If the Header Magic Bytes don't match, the decoder MUST
                 indicate an error.
 ----
+* First 6-byte sequence
+----
+0 FD  magic #1: 0xFD
+1 37  magic #2: '7'
+2 7A  magic #3: 'z'
+3 58  magic #4: 'X'
+4 5A  magic #5: 'Z'
+5 00  magic #6: 0x00
+----
+=== Format-identification logic
+1. read the first 6 bytes
+2. match them to the pattern "FD 37 7A 58 5A 00"
+
+
+
 === Java Library
-* The project that develops XZ Utils provide a Java library: to clone a repository:
-----
-git clone https://git.tukaani.org/project-name.git
-----
+* The project that develops XZ Utils provides a Java library: its git repository
++
+https://git.tukaani.org/project-name.git
+
+* Apache commons compress can handle the xz format.
