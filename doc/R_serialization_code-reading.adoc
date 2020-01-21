@@ -6,7 +6,7 @@
 
 == Summary
 
-=== linkage between R functions and backend c code
+=== Call-hierarchy from R functions to backend c functions
 * As the R internals manual writes (2 .Internal vs .Primitive : https://cran.r-project.org/doc/manuals/r-release/R-ints.html#g_t_002eInternal-vs-_002ePrimitive), the mapping table between an R function and its corresponding C function is stored in `names.c (./src/main/names.c)`; note the following naming exceptions that do not follow the default naming scheme "do_" + R-function-name; the following three different R functions are handled by one C function.
 
 ----
@@ -67,6 +67,132 @@ R-3.6.2/src/main
 . OutFormat: magic code
 . OutInteger: version number
 . WriteItem
+* "word" seems 8 bytes for 64-bit os;
+=== R storage units (nodes)
+==== Two types: SEXPREC and VECTOR_SEXPREC
+|===
+| use for     | R object       | c-type    | pointer | size (32-bit/64-bit os)
+| non-vectors | SEXPREC        | structure | SEXP    | 32 bytes/56 bytes
+| vectors     | VECTOR_SEXPREC | ?         | VECSXP  | 28 bytes/48 bytes
+|===
+Note: assuming 1 word = 8 bytes for 64-bit-os and 4 bytes for 32-bit-os
+==== Node: SECPREC
+----
+| sxpinfo (8 byte)                | 8
+| pointer 1: to the attribute     | 8
+| pointer 2: to the next node     | 8
+| pointer 3: to the previous node | 8
+| union                           | 3 words => 8*3=24 bytes or 8 bytes
+----------------------------------+ 32 + 24(8) = 56(40)
+code: Rinternals.h
+
+// The following multiline macro replaces "SEXPREC_HEADER" with
+"struct sxpinfo_struct sxpinfo;
+struct SEXPREC *attrib;
+struct SEXPREC *gengc_next_node, *gengc_prev_node"
+
+#define SEXPREC_HEADER           \
+  struct sxpinfo_struct sxpinfo; \
+  struct SEXPREC *attrib;        \
+  struct SEXPREC *gengc_next_node, *gengc_prev_node
+
+Thus, for "SEXPREC_HEADER;",  it becomes:
+
+"struct sxpinfo_struct sxpinfo;
+struct SEXPREC *attrib;
+struct SEXPREC *gengc_next_node, *gengc_prev_node;"
+
+and the following definition,
+
+typedef struct SEXPREC *SEXP;
+typedef struct SEXPREC {
+  SEXPREC_HEADER;
+  union {
+    struct primsxp_struct primsxp;  // int = 8 bytes
+    struct symsxp_struct symsxp;    // 3*pointer-structure = 3*8 = 24 bytes
+    struct listsxp_struct listsxp;  // ditto
+    struct envsxp_struct envsxp;    // ditto
+    struct closxp_struct closxp;    // ditto
+    struct promsxp_struct promsxp;  // ditto
+  } u;
+} SEXPREC;
+
+becomes the one as follows:
+
+typedef struct SEXPREC {
+    struct sxpinfo_struct sxpinfo;
+    struct SEXPREC *attrib;
+    struct SEXPREC *gengc_next_node, *gengc_prev_node;
+  union {
+    struct primsxp_struct primsxp;
+    struct symsxp_struct symsxp;
+    struct listsxp_struct listsxp;
+    struct envsxp_struct envsxp;
+    struct closxp_struct closxp;
+    struct promsxp_struct promsxp;
+  } u;
+} SEXPREC;
+
+----
+==== Node: VECTOR_SEXPREC
+* The vector types are RAWSXP, CHARSXP, LGLSXP, INTSXP, REALSXP, CPLXSXP, STRSXP, VECSXP, EXPRSXP and WEAKREFSXP.
+----
+Similarly, for the vector case,
+
+typedef struct VECTOR_SEXPREC {
+  SEXPREC_HEADER;
+  struct vecsxp_struct vecsxp;
+} VECTOR_SEXPREC, *VECSEXP;
+
+becomes
+
+typedef struct VECTOR_SEXPREC {
+  struct sxpinfo_struct sxpinfo;
+  struct SEXPREC *attrib;
+  struct SEXPREC *gengc_next_node, *gengc_prev_node;
+  struct vecsxp_struct vecsxp;
+} VECTOR_SEXPREC, *VECSEXP;
+
+| sxpinfo (8 byte)                | 8
+| pointer 1: to the attribute     | 8
+| pointer 2: to the next node     | 8
+| pointer 3: to the previous node | 8
+| length                          | 8 or 4?
+| truelength                      | 8 or 4?
++---------------------------------+---
+                                  | 56 or 48 bytes
+| data                            | ?
+
+CHARSXP
+length, truelength followed by a block of bytes (allowing for the nul terminator).
+
+LGLSXP
+INTSXP
+length, truelength followed by a block of C ints (which are 32 bits on all R platforms)
+
+REALSXP
+length, truelength followed by a block of C doubles.
+
+CPLXSXP
+length, truelength followed by a block of C99 double complexs.
+
+STRSXP
+length, truelength followed by a block of pointers (SEXPs pointing to CHARSXPs).
+
+RAWSXP
+length, truelength followed by a block of bytes.
+
+typedef struct VECTOR_SEXPREC {
+  SEXPREC_HEADER;
+  struct vecsxp_struct vecsxp;
+} VECTOR_SEXPREC, *VECSEXP;
+
+struct vecsxp_struct {
+  R_xlen_t length;
+  R_xlen_t truelength;
+};
+
+----
 
 
 https://www.hackerearth.com/practice/data-structures/linked-list/singly-linked-list/tutorial/
