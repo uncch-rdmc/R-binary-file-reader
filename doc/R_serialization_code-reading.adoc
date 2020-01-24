@@ -73,7 +73,7 @@ R-3.6.2/src/main
 |===
 | use for     | R object       | c-type    | pointer | size (32-bit/64-bit os)
 | non-vectors | SEXPREC        | structure | SEXP    | 32 bytes/56 bytes
-| vectors     | VECTOR_SEXPREC | ?         | VECSXP  | 28 bytes/48 bytes
+| vectors     | VECTOR_SEXPREC | structure | VECSXP  | 28 bytes/48 bytes
 |===
 Note: assuming 1 word = 8 bytes for 64-bit-os and 4 bytes for 32-bit-os
 ==== Node: SECPREC
@@ -196,6 +196,31 @@ struct vecsxp_struct {
 
 
 https://www.hackerearth.com/practice/data-structures/linked-list/singly-linked-list/tutorial/
+
+== Serialization in detail
+Warning::
+. When R saves an R object  (SEXPREC or VECTOR_SEXPREC) into a file, R does not copy its exact internal data structure into a file.
+. R's "num" type means not integer but real for serialization
+. save() command serializes the name of an object to be saved in a file whereas saveRDS() command seems not to this. 
+
+=== Structure: version 3
+==== Header
+. magic token according to the type of serialization
+. Format version
+. R information
+. encoding
+. R object name or label
+. unknown fields
+==== Data: R object(s)
+* For a data.frame, data are serialized column(variable)-wise.
+* For each column(variable)
+. type
+. length (how many rows)
+. data
+. class information or column-attached attribute information such as a factor's label-value-mapping table
+==== Attribute data (if available)
+. Attribute information attached to a data.frame?
+
 
 == source-code listing: relevant C functions
 
