@@ -1,4 +1,5 @@
 = R serialization: code-reading
+:source-highlighter: coderay
 
 * last updated:{docdatetime}
 
@@ -26,6 +27,7 @@
 
 
 * There are at least three pairs of serialization/deserialization-related R functions:
+
 |===
 |R function pair             |purposes
 |save() / load()             |save/load a set of R objects
@@ -35,6 +37,9 @@
 
 * The following table shows R functions(entry-point) and c files
 
+
+[options="header,footer"]
+.R Serialization/Unserialization Call Hierarchy
 |===
 |R functions   |stored R file   |R-side function           |c-entry-point               |stored c file   |key c function
 |save()         |load.R         |saveToConn()              |do_saveToConn()             |saveload.c      |R_Serialize() in serialize.c
@@ -43,8 +48,10 @@
 |loadRDS()      |serialize.R    |unserializeFromConn()     |do_unserializeFromConn()    |serialize.c     |R_Unserialize(), R_SerializeInfo()
 |serialize()    |serialize.R    |serializeb()/serialize()  |do_serialize()              |serialize.c     |R_serializeb(), R_serialize()
 |unserialize()  |serialize.R     |unserialize()               |do_serialize()              |serialize.c     |ditto
+6+|  Note: R_Serialize() vs R_serialize() in serialize.c, esp. concerning the number of arguments; R_Serialize() is stored in serialize.c, not saveload.c.
 |===
-note: R_Serialize() vs R_serialize() in serialize.c, esp. concerning the number of arguments; R_Serialize() is stored in serialize.c, not saveload.c.
+
+
 
 * source file location
 
@@ -76,7 +83,9 @@ R-3.6.2/src/main
 | Inf  |           |          | 7FF0000000000000 |          |
 |===
 
+==== string data
 * character field seems prefixed with the 4-byte hex pattern "0x00 04 00 09" for format version 3; for format version 2, it was "0x00 00 00 09"
+
 ----
 version 3 case:
 4 bytes: prefix: 00000000000001000000000000001001 or 0x00040009
@@ -85,6 +94,152 @@ x bytes: data
 note: version 2's prefix is:
 00000000000000000000000000001001 or 0x00000009
 ----
+* The code-tracing of writeItem() about a String vector implies that a supposed-to-be-int-size length is not 4-byte long but but 8 because this 4-byte segment always appears before the length of a String to follow:
+----
+08 is the length of char bytes to follow:
+00 04 00  09 00 00 00 08 74 65 73  74 64 61 74 61
+----
+
+Code-tracing::
+
+. writeItem()
+Here the length of a string to be dumped is set by `XLENGTH(s);`
+----
+// writeItem() in serialize.c
+case STRSXP:
+  len = XLENGTH(s);
+  WriteLENGTH(stream, s);
+  for (R_xlen_t ix = 0; ix < len; ix++)   //
+    WriteItem(STRING_ELT(s, ix), ref_table, stream);
+  break;
+
+
+  static void WriteLENGTH(R_outpstream_t stream, SEXP s) {
+  #ifdef LONG_VECTOR_SUPPORT
+    if (IS_LONG_VEC(s)) {
+      OutInteger(stream, -1);
+      R_xlen_t len = XLENGTH(s);
+      OutInteger(stream, (int)(len / 4294967296L));
+      OutInteger(stream, (int)(len % 4294967296L));
+    } else
+      OutInteger(stream, LENGTH(s));
+  #else
+    OutInteger(stream, LENGTH(s));
+  #endif
+  }
+
+
+
+note:
+Since Rinternals.h contains the following defintions and Rinlinedfuns.h defines an inline function, XLENGTH_EX() as follows:
+
+/* defined as a macro since fastmatch packages tests for it */
+#define XLENGTH(x) XLENGTH_EX(x)
+
+R_xlen_t XLENGTH_EX(SEXP x);
+
+INLINE_FUN R_xlen_t XLENGTH_EX(SEXP x)
+{
+    return ALTREP(x) ? ALTREP_LENGTH(x) : STDVEC_LENGTH(x);
+}
+// For our case, ALTREP is not applicable; therefore XLENGTH_EX => STDVEC_LENGTH
+// and its definition is include in Rinlinedfuns.h as follows:
+
+#define STDVEC_LENGTH(x) (((VECSEXP) (x))->vecsxp.length)
+#define STDVEC_TRUELENGTH(x) (((VECSEXP) (x))->vecsxp.truelength)
+
+// The above definition and below struct definition imply the size of R_xlen_t matters:
+struct vecsxp_struct {
+    R_xlen_t	length;
+    R_xlen_t	truelength;
+};
+// The following definitions suggest that `typedef ptrdiff_t R_xlen_t;` is chosen for 64-bit windows machines, not `typedef int R_xlen_t;`
+
+// ..\R\source\R-3.6.2\src\gnuwin32\fixed\h\Rconfig.h
+#ifdef _WIN64
+#define SIZEOF_SIZE_T 8
+#else
+#define SIZEOF_SIZE_T 4
+#endif
+
+// Rinternals.h
+/* type for length of (standard, not long) vectors etc */
+typedef int R_len_t;
+#define R_LEN_T_MAX INT_MAX
+
+
+#if (SIZEOF_SIZE_T > 4)
+#define LONG_VECTOR_SUPPORT
+#endif
+
+#ifdef LONG_VECTOR_SUPPORT
+typedef ptrdiff_t R_xlen_t;
+#define R_XLEN_T_MAX 4503599627370496
+#define R_SHORT_LEN_MAX 2147483647
+#else
+typedef int R_xlen_t;
+#define R_XLEN_T_MAX R_LEN_T_MAX
+#endif
+
+SEXP (STRING_ELT)(SEXP x, R_xlen_t i);
+
+
+int  (LENGTH)(SEXP x);
+#define LENGTH(x) LENGTH_EX(x, __FILE__, __LINE__)
+
+int LENGTH_EX(SEXP x, const char *file, int line);
+
+INLINE_FUN int LENGTH_EX(SEXP x, const char *file, int line)
+{
+    if (x == R_NilValue) return 0;
+    R_xlen_t len = XLENGTH(x);
+#ifdef LONG_VECTOR_SUPPORT
+    if (len > R_SHORT_LEN_MAX)
+	R_BadLongVector(x, file, line);
+#endif
+    return (int) len;
+}
+
+
+
+// Rinlinedfuns.h
+#if C99_INLINE_SEMANTICS
+# undef INLINE_FUN
+# ifdef COMPILING_R
+/* force exported copy */
+#  define INLINE_FUN extern inline
+# else
+/* either inline or link to extern version at compiler's choice */
+#  define INLINE_FUN inline
+# endif /* ifdef COMPILING_R */
+#endif /* C99_INLINE_SEMANTICS */
+
+#if !defined(COMPILING_R) && !defined(COMPILING_MEMORY_C) &&	\
+    !defined(TESTING_WRITE_BARRIER)
+/* if not inlining use version in memory.c with more error checking */
+INLINE_FUN SEXP STRING_ELT(SEXP x, R_xlen_t i) {
+    if (ALTREP(x))
+	return ALTSTRING_ELT(x, i);
+    else {
+	SEXP *ps = STDVEC_DATAPTR(x);
+	return ps[i];
+    }
+}
+#else
+SEXP STRING_ELT(SEXP x, R_xlen_t i);
+#endif
+
+#define STDVEC_DATAPTR(x) ((void *) (((SEXPREC_ALIGN *) (x)) + 1))
+#define CHAR(x)		((const char *) STDVEC_DATAPTR(x))
+
+typedef union {
+  VECTOR_SEXPREC s;
+  double align;
+} SEXPREC_ALIGN;
+
+----
+
+
 
 === R storage units (nodes)
 ==== Two types: SEXPREC and VECTOR_SEXPREC
@@ -219,7 +374,7 @@ https://www.hackerearth.com/practice/data-structures/linked-list/singly-linked-l
 Warning::
 . When R saves an R object  (SEXPREC or VECTOR_SEXPREC) into a file, R does not copy its exact internal data structure into a file.
 . R's "num" type means not integer but real for serialization
-. save() command serializes the name of an object to be saved in a file whereas saveRDS() command seems not to this. 
+. save() command serializes the name of an object to be saved in a file whereas saveRDS() command seems not to this.
 
 === Structure: version 3
 ==== Header
