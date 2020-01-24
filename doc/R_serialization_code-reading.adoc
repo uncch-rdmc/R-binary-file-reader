@@ -68,6 +68,24 @@ R-3.6.2/src/main
 . OutInteger: version number
 . WriteItem
 * "word" seems 8 bytes for 64-bit os;
+* The binary expression of N/A, NaN, and Inf are variable-type dependent:
+|===
+|      |character  | factor   | real             | logical  |Note
+| N/A  | FFFFFFFFF | 80000000 | 7FF00000000007A2 | 80000000 |
+| NaN  | 4E614E    |          | 7FF8000000000000 |          |
+| Inf  |           |          | 7FF0000000000000 |          |
+|===
+
+* character field seems prefixed with the 4-byte hex pattern "0x00 04 00 09" for format version 3; for format version 2, it was "0x00 00 00 09"
+----
+version 3 case:
+4 bytes: prefix: 00000000000001000000000000001001 or 0x00040009
+4 bytes: length
+x bytes: data
+note: version 2's prefix is:
+00000000000000000000000000001001 or 0x00000009
+----
+
 === R storage units (nodes)
 ==== Two types: SEXPREC and VECTOR_SEXPREC
 |===
