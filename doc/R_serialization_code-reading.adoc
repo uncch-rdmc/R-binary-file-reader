@@ -82,7 +82,29 @@ R-3.6.2/src/main
 | NaN  | 4E614E    |          | 7FF8000000000000 |          |
 | Inf  |           |          | 7FF0000000000000 |          |
 |===
+* The serialization of a string-type(16: STRSXP) variable differs from other numeric types(integer and real) probably because each datum's length differs from one another; for each datum, there are three segments:
+. 4-byte integer: 1st 2 byte segment is about type: CHARSXP(0X09) and next 2byte section is basically a 3-bit-flag, frequently 100 = 0X04
+. 4-byte integer: the length of chars to follow
+. A sequence of chars: (NA is expressed as "0xFF FF FF FF")
+* A integer- or real-type variable does not have datum-wise type-field; their type statement comes before a sequence of data just once because the byte-size of each datum is fixed, i.e., does not vary.
+* Basically, serialization logic starts with information about the type of next field; then its length;
 
+
+
+==== Serializing flow
+. Unknown rendering steps are amost all in WriteItem
+[options="header,footer"]
+|===
+| section | sub-section | C functions|
+| header  | type        |            |
+|         | R info      |            |
+|         | encoding    |            |
+| data    | type/ length| WriteItem |
+|         | data        | WriteItem  |
+|         | attributes  | WriteItem  |
+| metadata| attributes  |            |
+4+|                                  |
+|===
 ==== string data
 * character field seems prefixed with the 4-byte hex pattern "0x00 04 00 09" for format version 3; for format version 2, it was "0x00 00 00 09"
 
