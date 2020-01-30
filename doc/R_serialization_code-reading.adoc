@@ -108,7 +108,8 @@ For version 2 files that do not include char-encoding information, the 4-byte he
 ----
 i.e., no \'4'.
 
-
+* read.table() in utils package returns a data.frame; the core function in read.table() is scan() and its C-backend function is do_scan() in scan.c;
+do_scan() returns SEXP ans;isVectorList() is TRUE, it seems a data.frame (see io.c, line 1130).
 
 
 ==== Serialization steps within writeItem() by inferring from the read-back logic of readItem()
