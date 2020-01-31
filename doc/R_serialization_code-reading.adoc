@@ -82,23 +82,24 @@ R-3.6.2/src/main
 | NaN  | 4E614E    |          | 7FF8000000000000 |          |
 | Inf  |           |          | 7FF0000000000000 |          |
 |===
-* The serialization of a string-type(16: STRSXP) variable differs from other numeric types(integer and real) probably because each datum's length differs from one another; for each datum, there are three segments:
-. 4-byte integer: 1st 2 byte segment is about type: CHARSXP(0X09) and next 2byte section is basically a 3-bit-flag, frequently 100 = 0X04
+* The structure of a serialized R object is not an exact copy of its internal structure before its serialization.
+* A serialized STRSXP object is followed by its pointed(member) CHARSXP objects.
+* The serialization of a string-type (0x10: STRSXP) list differs from other numeric types such as integer and real in two respects: each element's length differs from one another and STRSXP type data are followed by the data of its member CHARSXP.
+* A serialized STRSXP list starts with:
+. 4-byte integer: type information with flags
+. 4-byte integer: length (size of this list)
+. 4-byte integer: 1st list member's type information, CHARSXP(0X09), with its encoding bit, frequently 0x04 = 0b100
 . 4-byte integer: the length of chars to follow
-. A sequence of chars: (NA is expressed as "0xFF FF FF FF")
-* A integer- or real-type variable does not have datum-wise type-field; their type statement comes before a sequence of data just once because the byte-size of each datum is fixed, i.e., does not vary.
-* Basically, serialization logic starts with information about the type of next field; then its length;
+. A sequence of chars: (NA is expressed as -1, i.e., "FF FF FF FF")
 
-* hex pattern reading
-
-The following pattern appears before a sequence of chars;
+* The following hex pattern appears before a CHARSXP datum;
 ----
 0x00040009
 ----
-Its binary patter is as follows, assuming the above hex pattern was serialized with the big-endian layout:
+Its binary pattern is as follows, assuming the above hex pattern was serialized with the big-endian layout:
 
 ----
-00000000 00000100 00000000 00001001
+0b 00000000 00000100 00000000 00001001
 ----
 
 The above binary pattern indicates the 18th (starting from 0, not 1) from the right (least significant bit) has 1; this pattern suggests the following chars are encoded in ASCII according to the R internals, p. 6.
@@ -108,9 +109,20 @@ For version 2 files that do not include char-encoding information, the 4-byte he
 ----
 i.e., no \'4'.
 
-* read.table() in utils package returns a data.frame; the core function in read.table() is scan() and its C-backend function is do_scan() in scan.c;
-do_scan() returns SEXP ans;isVectorList() is TRUE, it seems a data.frame (see io.c, line 1130).
+* A integer- or real-type list does not have element-wise type-fields; their type statement comes before a sequence of data just once because their byte-size is fixed, i.e., does not vary.
 
+* Basically, R's serialization logic starts with information about the type of next field; then its length;
+
+
+
+* `read.table()` in utils package returns a data.frame; the core function in `read.table()` is `scan()` and its C-backend function is `do_scan()` in `scan.c`;
+`do_scan()` returns `SEXP ans`; if `isVectorList()` is TRUE, it is indentified as a `data.frame` (see `io.c`, line 1130).
+
+* While R's source files are open-source, their documentation about its serialization/unserialization process is sparse (_R internals_, 1.8 Serialization Formats); for novice developers who want to grasp the outline of serialization/unserialization, the must-read items are:
+** R's official manuals: R internals (Chapter 1, R internal structures) and _Writing R Extensions_(Chapter 5, System and foreign language interface)
+** Peter Dalgaad's presentation for UseR! 2004, _Language interfaces: . Call and . External_
+
+* ? The end of extra information attached to a list is terminated with "0xFFFFFFFF".
 
 ==== Serialization steps within writeItem() by inferring from the read-back logic of readItem()
 * Serialization logic coded in writeItem() is not straight forwrard; The outline of this method is:
