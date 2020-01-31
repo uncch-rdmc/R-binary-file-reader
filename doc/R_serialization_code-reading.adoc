@@ -90,7 +90,7 @@ R-3.6.2/src/main
 . 4-byte integer: length (size of this list)
 . 4-byte integer: 1st list member's type information, CHARSXP(0X09), with its encoding bit, frequently 0x04 = 0b100
 . 4-byte integer: the length of chars to follow
-. A sequence of chars: (NA is expressed as -1, i.e., "FF FF FF FF")
+. A sequence of chars: (NA is expressed as -1, i.e., `FF FF FF FF`)
 
 * The following hex pattern appears before a CHARSXP datum;
 ----
@@ -122,7 +122,7 @@ i.e., no \'4'.
 ** R's official manuals: R internals (Chapter 1, R internal structures) and _Writing R Extensions_(Chapter 5, System and foreign language interface)
 ** Peter Dalgaad's presentation for UseR! 2004, _Language interfaces: . Call and . External_
 
-* ? The end of extra information attached to a list is terminated with "0xFFFFFFFF".
+* ? The end of extra information attached to a list is terminated with `0xFFFFFFFF`; why is this termination necessary?.
 
 ==== Serialization steps within writeItem() by inferring from the read-back logic of readItem()
 * Serialization logic coded in writeItem() is not straight forwrard; The outline of this method is:
