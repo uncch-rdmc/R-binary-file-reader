@@ -123,7 +123,12 @@ i.e., no \'4'.
 ** Peter Dalgaad's presentation for UseR! 2004, _Language interfaces: . Call and . External_
 
 * ? The end of extra information attached to a list is terminated with `0xFFFFFFFF`; why is this termination necessary?.
+* A matrix-type data is to start with  and ends with  .
 
+* When multiple data.frames are saved in one RData file, do they keep their respective serialization structure when they are individually saved as a single file?
+* R's datasets package: data files are stored under ../src/library/datasets/data/
+* R-serialization format does not insert an end-maker of an field; the length of a forthcoming field is given ahead of it.
+* Non-repeating fields are clearly defined by specification whereas repeating ones sometimes terminated by additional, particular byte-patterns, especially, the end of an attribute field.
 ==== Serialization steps within writeItem() by inferring from the read-back logic of readItem()
 * Serialization logic coded in writeItem() is not straight forwrard; The outline of this method is:
 . An if-block of handling a special case
