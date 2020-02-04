@@ -60,6 +60,8 @@ R-3.6.2/src/library/base/R
 ** c file location
 R-3.6.2/src/main
 
+<<<
+
 === Miscellaneous
 * There are three key options for each R entry-point functions:
 ** versions: 1, 2, 3
@@ -123,14 +125,59 @@ i.e., no \'4'.
 ** Peter Dalgaad's presentation for UseR! 2004, _Language interfaces: . Call and . External_
 
 * ? The end of extra information attached to a list is terminated with `0xFFFFFFFF`; why is this termination necessary?.
-* A matrix-type data is to start with  and ends with  .
+* Matrix-type dataset (version 3, for example, state.x77 data in datasets package) starts with ALTREP_SXP,  `"0x000000EE"` (238) and its header part slightly differs from non-ALTREP case:
+----
+00 00 00 EE
+00 00 00 02
+00 00 00 01
+00 04 00 09
+00 00 00 09
+77 72 61 70 5F 72 65 61 6C
+00 00 00 02
+00 00 00 01
+00 04 00 09
+00 00 00 04
+62 61 73 65
+00 00 00 02
+00 00 00 0D
+00 00 00 01
+00 00 00 0E
+00 00 00 FE
+00 00 00 02
+00 00 00 0E
+00 00 01 90
+
+
+
+----
+
+
+* ALTREP new framework
+
+// ALTREP: Alternative Representations for R Objects
+https://svn.r-project.org/R/branches/ALTREP/ALTREP.html
+----
+Serialization
+A class that wants to handle serializing and unserializing its objects should define Serialized_state and Unserialize methods.
+
+The Serialized_state method should return an SEXP which is serialized in the usual way, along with attributes, the name of the ALTREP class, and the package the class is registered with. Unserializing such an object will locate the corresponding class object and call the Unserialize class method with this class object and the serialized state as arguments. The method should return a new object without attributes. The serialized attributes are then unserialized and attached.
+
+The Serialize method can also return a C NULL pointer, in which case the object is serialized in the standard way for its SEXP type.
+----
 
 * When multiple data.frames are saved in one RData file, do they keep their respective serialization structure when they are individually saved as a single file?
 * R's datasets package: data files are stored under ../src/library/datasets/data/
 * R-serialization format does not insert an end-maker of an field; the length of a forthcoming field is given ahead of it.
 * Non-repeating fields are clearly defined by specification whereas repeating ones sometimes terminated by additional, particular byte-patterns, especially, the end of an attribute field.
+
+
+
+
+
+<<<
+
 ==== Serialization steps within writeItem() by inferring from the read-back logic of readItem()
-* Serialization logic coded in writeItem() is not straight forwrard; The outline of this method is:
+* Serialization logic coded in writeItem() is not straightforward; The outline of this method is:
 . An if-block of handling a special case
 . Label `tailcall:` that marks the beginning of a loop
 . An if-block of handling the ALTREP case
