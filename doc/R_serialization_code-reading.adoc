@@ -441,7 +441,7 @@ typedef union {
 | vectors     | VECTOR_SEXPREC | structure | VECSXP  | 28 bytes/48 bytes
 |===
 Note: assuming 1 word = 8 bytes for 64-bit-os and 4 bytes for 32-bit-os
-==== Node: SECPREC
+==== Node: SEXPREC
 ----
 | sxpinfo (8 byte)                | 8
 | pointer 1: to the attribute     | 8
