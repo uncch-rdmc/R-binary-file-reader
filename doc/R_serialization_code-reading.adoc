@@ -202,42 +202,45 @@ The Serialize method can also return a C NULL pointer, in which case the object 
 
 ----
 // Byte pattern example 1: no object name; dimension: 12 vars and 10 obs
+
 0x00 00 03 13  if 0x13 means a SEXP type, it is VECSXP, with flags:
-               object: T, attribute: T, tag: 0
+               object: T, attribute: T, tag: 0 = 0b011
   00 00 00 0C  if 0x0C means some length: a possible interpretation is:
                how many variables?: 12
-               2nd segment '03'=011 => object: T, attribute: T, tag: F
+
   00 00 02 10  if 0x10 means an SEXP type, it is STRSXP and flags:
-               object: F, attribute: T, tag: F
+               object: F, attribute: T, tag: F 0b010
   00 00 00 0A  length: how many rows (observations)? 10
   00 04 00 09  if 0x09 means an SEXP type, it is CHARSXP, with an encoding bit
+               0b100 => Latin-1?
   00 00 00 03  length of chars follows: 3
 
 // Byte pattern example 2: with an object name, 'wrld96z8', dimension: ditto
 0x00 00 04 02  if 0x02 means an SEXP type, it is LISTXP, with fags:
-               object: F, attribute: F,  tag: T
-  00 00 00 01  how many follow? 1?
+               object: F, attribute: F,  tag: T => 0b100
+  00 00 00 01  tag follows: SYMSXP type = 0x01 or length = 1
   00 04 00 09  if 0x09 means an SEXP type, it is CHARSXP, with an encoding bit
+               0b100 = latin-1?
   00 00 00 08  length of chars follows: 8
   77 72 6C 64   w r l d
   39 36 7A 38   9 6 z 8
 
   00 00 03 13  if 0x13 means a SEXP type, it is VECSXP and flags: object: T,
-               attribute: T, tag: 0
+               attribute: T, tag: F,=> 0b011
   00 00 00 0C  if 0x0C means some length: a possible interpretation is:
                how many variables?: 12
-               2nd segment '03'=011 => object: T, attribute: T, tag: F ?
+
   00 00 02 10  if 0x10 means an SEXP type, it is STRSXP, with flags: object: F,
-               attribute: T, tag: F
+               attribute: T, tag: F => 0b010
   00 00 00 0A  length: how many rows (observations)? 10
   00 04 00 09  if 0x09 means an SEXP type, it is CHARSX, with an encoding bit
   00 00 00 03  length of chars follows: 3
   42 45 4C     BEL
 
-// Byte pattern example 3: with an object name, 'testdata', dimension: 6 vars and25 obs
+// Byte pattern example 3: with an object name, 'testdata', dimension: 6 vars and 25 obs
 0x00 00 04 02  if 0x02 means an SEXP type, it is LISTXP,  with fags:
-               object: F, attribute: F,  tag: T
-  00 00 00 01  how many follow? 1
+               object: F, attribute: F,  tag: T => ob100
+  00 00 00 01  SYMSXP or length
   00 04 00 09  if 0x09 means an SEXP type, it is CHARSXP, with an encoding bit
   00 00 00 08  length: 8 chars follow
   74 65 73 74  t e s t
