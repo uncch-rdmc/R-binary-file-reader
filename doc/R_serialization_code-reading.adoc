@@ -63,6 +63,10 @@ R-3.6.2/src/main
 <<<
 
 === Miscellaneous
+* R's table-like data: data.frame, matrix, time-series, table.
+** Except for tables, the other three types can be handled by a unified, relatively simpler framework. 
+
+
 * There are three key options for each R entry-point functions:
 ** versions: 1, 2, 3
 ** ASCII vs binary(non-ASCII)
